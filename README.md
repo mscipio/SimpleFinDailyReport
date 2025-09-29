@@ -25,7 +25,7 @@ This project requires sensitive credentials (API key, email password) which are 
 Clone the project to your local machine and install the required Python packages:
 
 ```
-git clone [https://github.com/mscipio/SimpleFinDailyReport](https://github.com/mscipio/SimpleFinDailyReport)
+git clone https://github.com/mscipio/SimpleFinDailyReport
 cd SimpleFinDailyReport
 pip install requests python-dotenv
 
