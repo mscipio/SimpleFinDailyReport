@@ -56,53 +56,9 @@ def get_simplefin_data(days=1):
     except requests.exceptions.RequestException as e:
         print(f"Error fetching data from SimpleFIN: {e}")
         return None
-
-def format_email_body(data):
-    """Formats the transaction data into a readable string for the email."""
-    if not data or not data.get("accounts"):
-        return "No new transactions found in the last 24 hours."
-
-    email_body = "Daily Transaction Recap:\n\n"
-    
-    for account in data["accounts"]:
-        account_name = account.get("name")
-        balance = account.get("balance")
-        transactions = account.get("transactions", [])
-        
-        email_body += f"--- Account: {account_name} (Balance: ${balance}) ---\n"
-        
-        if not transactions:
-            email_body += "No new transactions.\n\n"
-            continue
-            
-        for transaction in sorted(transactions, key=lambda t: t.get("posted", 0), reverse=True):
-            date = datetime.fromtimestamp(transaction.get("posted", 0)).strftime("%Y-%m-%d %H:%M")
-            description = transaction.get("description", "N/A")
-            amount = transaction.get("amount", "N/A")
-            email_body += f"  - {date} | {description:<30} | ${amount}\n"
-        
-        email_body += "\n"
-        
-    return email_body
-
-def send_email(subject, body):
-    """Sends the formatted email."""
-    try:
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()  # Secure the connection
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            
-            message = f"Subject: {subject}\n\n{body}"
-            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, message)
-        
-        print("Email sent successfully!")
-        return True
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-        return False
     
 def format_email_body_html(data):
-    """Formats the transaction data to show recent transactions, account balances, and Net Worth summary, with perfectly zeroed-gap sign/dollar alignment."""
+    """Formats the transaction data to show recent transactions, account balances, and Net Worth summary, with black font for group totals."""
     if not data or not data.get("accounts"):
         return "<p style='font-family: Arial, sans-serif; font-size: 14px; text-align: center;'>No new transactions found.</p>"
 
@@ -180,14 +136,14 @@ def format_email_body_html(data):
             .net-worth-row { font-size: 16px; font-weight: bold; }
             .net-worth-row td { padding: 8px 10px; }
             .balance-row { background-color: #f9f9f9; }
-            .balance-row td { padding: 8px 10px; font-weight: bold; }
-            /* This style is critical for the group balance colors in the header */
-            .group-total-text { color: #fff; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+            .balance-row td { padding: 8px 10px; } 
+            /* FIXED 1: Set color to black and remove text-shadow */
+            .group-total-text { color: #000; text-shadow: none; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>Daily Financial Report</h1>
+            <h1>Financial Report - Last 7 days</h1>
     """
     
     # ----------------------------------------------------
@@ -259,18 +215,18 @@ def format_email_body_html(data):
         
         total_class = "group-total-text"
         
-        # NOTE: 3-column structure (68% Label, 7% Sign/$, 25% Number)
+        # FIXED 2: Set color of table content to black. Removed redundant inline styles/class that forced white font.
         html_body += f"""
-        <table style="width: 100%; background-color: {group_color}; color: #fff; border-collapse: collapse; margin: 10px 0 0 0;">
+        <table style="width: 100%; background-color: {group_color}; color: #000; border-collapse: collapse; margin: 10px 0 0 0;">
             <tr>
-                <td width="68%" style="font-size: 16px; font-weight: bold; padding: 5px 10px; text-align: left; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;">
+                <td width="68%" style="font-size: 16px; font-weight: bold; padding: 5px 10px; text-align: left;">
                     {group_name} Total:
                 </td>
                 <td width="7%" style="font-size: 16px; font-weight: bold; text-align:right; padding: 5px 0 5px 0;"> 
-                    <span class="{total_class}">{total_sign}$</span>
+                    <span>{total_sign}$</span>
                 </td>
                 <td width="25%" style="font-size: 16px; font-weight: bold; text-align:left; padding: 5px 10px 5px 0;">
-                    <span class="{total_class}">{formatted_group_total}</span>
+                    <span>{formatted_group_total}</span>
                 </td>
             </tr>
         </table>
@@ -293,16 +249,16 @@ def format_email_body_html(data):
                 numeric_sign = "-" if numeric_balance < 0 else ""
                 formatted_numeric_abs_balance = f"{abs(numeric_balance):,.2f}"
                 
-                # NOTE: Sign and $ combined into one cell (width="7%")
+                # Removed <strong> tags from balance content
                 balance_content = (
                     # 2. Cell for Sign and $ (Combined)
-                    f'<td width="7%" style="text-align:right; padding: 0 0 0 0;"><strong>{numeric_sign}$</strong></td>'
+                    f'<td width="7%" style="text-align:right; padding: 0 0 0 0;">{numeric_sign}$</td>'
                     # 3. Cell for number
-                    f'<td width="25%" style="text-align:left; padding-left:0;"><strong>{formatted_numeric_abs_balance}</strong></td>'
+                    f'<td width="25%" style="text-align:left; padding-left:0;">{formatted_numeric_abs_balance}</td>'
                 )
             except (ValueError, TypeError):
-                # Fallback for non-numeric (uses colspan="2" for the 2 balance cells)
-                balance_content = f'<td colspan="2" width="32%" style="text-align:right; padding-left:0;"><strong>{balance}</strong></td>'
+                # Fallback for non-numeric - REMOVED <strong> TAGS
+                balance_content = f'<td colspan="2" width="32%" style="text-align:right; padding-left:0;">{balance}</td>'
 
             
             html_body += f"""
@@ -363,14 +319,22 @@ def send_email_html(sender, recipient, password, subject, body_html):
     except Exception as e:
         print(f"Error sending email: {e}")
 
-def run_report_main():
-    transaction_data = get_simplefin_data()
+def run_report_main(days=1):
+    transaction_data = get_simplefin_data(days=days)
     if transaction_data:
-        email_body_html = format_email_body_html(transaction_data, days=1)
-        email_subject = f"Daily Financial Report ({datetime.now().strftime('%Y-%m-%d')})"
+        email_body_html = format_email_body_html(transaction_data)
+        # Get the current date and time
+        today = datetime.now()
+        # Subtract 7 days using timedelta
+        seven_days_ago = today - timedelta(days=days)
+        # Format the date as 'YYYY-MM-DD'
+        # Format the dates as 'YYYY-MM-DD'
+        today_str = today.strftime('%Y-%m-%d')
+        seven_days_ago_str = seven_days_ago.strftime('%Y-%m-%d')
+        email_subject = f"Weekly Financial Report ({seven_days_ago_str} - {today_str})"
         send_email_html(SENDER_EMAIL, RECIPIENT_EMAIL, SENDER_PASSWORD, email_subject, email_body_html)
     else:
         print("Could not retrieve transaction data. Skipping email send.")
 
 if __name__ == "__main__":
-    run_report_main()
+    run_report_main(days=7)
